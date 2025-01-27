@@ -3,6 +3,7 @@ import google.generativeai as genai
 from PIL import Image
 from dotenv import load_dotenv
 import os
+import base64
 
 # Load environment variables
 load_dotenv()
@@ -81,6 +82,21 @@ if uploaded_file:
                     st.markdown("### Preview of generated notes:")
                     st.markdown(response.text)
                     st.markdown(f"### Image embedded at:\n`![[assets/{uploaded_file.name}]]`")
+                else:
+                    # Create downloadable version with embedded image
+                    image_bytes = uploaded_file.getvalue()
+                    encoded_image = base64.b64encode(image_bytes).decode()
+                    mime_type = uploaded_file.type
+                    data_url = f"data:{mime_type};base64,{encoded_image}"
+
+                    downloadable_content = f"# {note_title}\n\n{response.text}\n\n![Uploaded Image]({data_url})"
+
+                    st.download_button(
+                        label="Download Markdown File",
+                        data=downloadable_content,
+                        file_name=f"{note_title}.md",
+                        mime="text/markdown"
+                    )
 
             except Exception as e:
                 st.error(f"Processing error: {str(e)}")
