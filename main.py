@@ -13,99 +13,74 @@ model = genai.GenerativeModel("gemini-1.5-flash")
 
 
 def save_to_obsidian(note_title, vault_base_path, uploaded_file, content):
-    """Save notes with verified image paths"""
+    """Save notes and images with exact path structure"""
     try:
-        # ========== 1. Path Construction ==========
-        base_dir = os.path.expanduser(vault_base_path)
-        generated_notes = os.path.join(base_dir, "Generated Notes")
-        assets_dir = os.path.join(generated_notes, "assets")
+        # Create full paths according to your structure
+        generated_notes_dir = os.path.join(vault_base_path, "Generated Notes")
+        assets_dir = os.path.join(generated_notes_dir, "assets")
 
-        # Create directories with existence check
+        # Create directories if they don't exist
         os.makedirs(assets_dir, exist_ok=True)
-        if not os.path.exists(assets_dir):
-            raise Exception(f"Failed to create assets directory at {assets_dir}")
 
-        # ========== 2. File Operations ==========
-        # Sanitize filename for Apple's filesystem
-        safe_filename = uploaded_file.name.replace(" ", "_").replace(".", "-")
-        image_path = os.path.join(assets_dir, safe_filename)
-
-        # Write image with verification
+        # Save image to assets
+        image_path = os.path.join(assets_dir, uploaded_file.name)
         with open(image_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        if not os.path.exists(image_path):
-            raise Exception(f"Failed to save image at {image_path}")
 
-        # ========== 3. Note Creation ==========
-        note_content = f"""# {note_title}
-![[assets/{safe_filename}]]  <!-- Obsidian embed -->
+        # Create note with correct image embed path
+        note_content = f"""# {note_title}\n\n{content}\n\n![[assets/{uploaded_file.name}]]\n"""
 
-{content}
-"""
-        note_path = os.path.join(generated_notes, f"{note_title}.md")
-
+        # Save note file
+        note_filename = f"{note_title}.md"
+        note_path = os.path.join(generated_notes_dir, note_filename)
         with open(note_path, "w") as f:
             f.write(note_content)
 
-        return note_path, image_path
+        return note_path
 
     except Exception as e:
-        st.error(f"Obsidian Save Error: {str(e)}")
-        return None, None
+        st.error(f"Error saving to Obsidian: {str(e)}")
+        return None
 
 
 # Streamlit UI
-st.title("📝 Obsidian Note Generator")
+st.title("📝 Image to Obsidian Notes")
+st.write("Convert images to properly formatted Obsidian notes with perfect image links")
 
-# Configure your EXACT path (verify in Finder)
+# Configure your exact path
 VAULT_BASE_PATH = "/Users/ayrafraihan/Library/Mobile Documents/com~apple~CloudDocs/obsidian new/second brain [ssd]/AI generated notes"
 
-uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
+# File upload
+uploaded_file = st.file_uploader("Upload whiteboard/PPT image", type=["png", "jpg", "jpeg"])
 note_title = st.text_input("Note Title", "Meeting Notes")
 
-if uploaded_file and st.button("Generate & Save"):
-    with st.spinner("Processing..."):
-        try:
-            # Generate content
-            img = Image.open(uploaded_file)
-            response = model.generate_content([
-                "Create markdown notes from this image. Use headings, bullet points, and proper formatting:",
-                img
-            ])
+if uploaded_file:
+    # Display preview
+    img = Image.open(uploaded_file)
+    st.image(img, caption="Uploaded Image", use_column_width=True)
 
-            # Save to Obsidian
-            note_path, image_path = save_to_obsidian(
-                note_title=note_title,
-                vault_base_path=VAULT_BASE_PATH,
-                uploaded_file=uploaded_file,
-                content=response.text
-            )
+    if st.button("Generate & Save"):
+        with st.spinner("Processing..."):
+            try:
+                # Generate content
+                response = model.generate_content([
+                    "Extract text and create markdown-formatted notes from this image. Include headings and bullet points:",
+                    img
+                ])
 
-            if note_path and image_path:
-                st.success(f"""
-                **Note saved successfully!**  
-                - Note location: `{note_path}`  
-                - Image location: `{image_path}`
-                """)
+                # Save to Obsidian
+                note_path = save_to_obsidian(
+                    note_title=note_title,
+                    vault_base_path=VAULT_BASE_PATH,
+                    uploaded_file=uploaded_file,
+                    content=response.text
+                )
 
-                # Verification checks
-                st.markdown("### Troubleshooting Guide")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.checkbox("✅ Note file exists", value=os.path.exists(note_path))
-                    st.checkbox("✅ Image file exists", value=os.path.exists(image_path))
-                with col2:
-                    st.checkbox("✅ Assets directory exists",
-                                value=os.path.exists(os.path.dirname(image_path)))
-                    st.checkbox("✅ Path matches Obsidian",
-                                value=VAULT_BASE_PATH in note_path)
+                if note_path:
+                    st.success(f"Note saved successfully at:\n{note_path}")
+                    st.markdown("### Preview of generated notes:")
+                    st.markdown(response.text)
+                    st.markdown(f"### Image embedded at:\n`![[assets/{uploaded_file.name}]]`")
 
-                st.markdown(f"""
-                ### Obsidian Embed Code
-                ```markdown
-                ![[assets/{os.path.basename(image_path)}]]
-                ```
-                """)
-
-        except Exception as e:
-            st.error(f"Fatal Error: {str(e)}")
+            except Exception as e:
+                st.error(f"Processing error: {str(e)}")
